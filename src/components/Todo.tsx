@@ -1,4 +1,5 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import type { Todo } from "~/server/types";
 import { api } from "~/utils/api";
 
@@ -14,18 +15,90 @@ export function Todo({ todo }: TodoProps) {
   const trpc = api.useContext();
 
   const { mutate: toggleMutation } = api.todo.toggle.useMutation({
+    onMutate: async ({ id, is_completed }) => {
+      await trpc.todo.all.cancel();
+      const previousTodos = trpc.todo.all.getData();
+      trpc.todo.all.setData(undefined, (prev) => {
+        if (!prev) return previousTodos;
+        return prev.map((t) => {
+          if (t.id === id) {
+            return {
+              ...t,
+              isCompleted: is_completed,
+            };
+          }
+          return t;
+        });
+      });
+      return { previousTodos };
+    },
+    onSuccess: ({ isCompleted }) => {
+      if (isCompleted) {
+        toast.success("Todo completed 🎉");
+      }
+    },
+    onError: (err, is_completed, context) => {
+      toast.error(
+        `An error occured when marking todo as ${
+          is_completed ? "completed" : "uncompleted"
+        }`
+      );
+      console.error(err);
+      if (!context) return;
+      trpc.todo.all.setData(undefined, () => context.previousTodos);
+    },
     onSettled: async () => {
       await trpc.todo.all.invalidate();
     },
   });
 
   const { mutate: deleteMutation } = api.todo.delete.useMutation({
+    onMutate: async (deleteId) => {
+      await trpc.todo.all.cancel();
+      const previousTodos = trpc.todo.all.getData();
+      trpc.todo.all.setData(undefined, (prev) => {
+        if (!prev) return previousTodos;
+        return prev.filter((t) => t.id !== deleteId);
+      });
+      return { previousTodos };
+    },
+    onError: (err, _, context) => {
+      toast.error("An error occurred when deleting todo");
+      console.error(err);
+      if (!context) return;
+      trpc.todo.all.setData(undefined, () => context.previousTodos);
+    },
     onSettled: async () => {
       await trpc.todo.all.invalidate();
     },
   });
 
   const { mutate: updateMutation } = api.todo.update.useMutation({
+    onMutate: async ({ id, text: currentTodo }) => {
+      await trpc.todo.all.cancel();
+      const previousTodos = trpc.todo.all.getData();
+      trpc.todo.all.setData(undefined, (prev) => {
+        if (!prev) return previousTodos;
+        return prev.map((t) => {
+          if (t.id === id) {
+            return {
+              ...t,
+              text: currentTodo,
+            };
+          }
+          return t;
+        });
+      });
+      setCurrentTodo(currentTodo);
+      return { previousTodos };
+    },
+    onError: (err, _, context) => {
+      toast.error("An error occured when editing todo");
+      console.error(err);
+      setCurrentTodo(text);
+      if (!context) return;
+      trpc.todo.all.setData(undefined, () => context.previousTodos);
+    },
     onSettled: async () => {
       await trpc.todo.all.invalidate();
     },
